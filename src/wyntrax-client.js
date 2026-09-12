@@ -13,6 +13,10 @@ const BASE_URL = process.env.NODE_ENV === "development"
 // The on-chain confirmation poller lives outside /api/mcp — same host, different path.
 const STATUS_URL = BASE_URL.replace(/\/api\/mcp\/v1$/, "/api/transactions/status");
 
+// Same for the token-contract lookup — same route the web app's checkout uses,
+// so the MCP server and the storefront always agree on which address to pay.
+const CONTRACT_URL = BASE_URL.replace(/\/api\/mcp\/v1$/, "/api/contract/usdc");
+
 async function request(path, options = {}, userToken = null) {
     const headers = {
         "Content-Type": "application/json",
@@ -235,6 +239,25 @@ export async function getAnalytics({ userId, period = "30d" }, userToken) {
  */
 export async function getProduct({ productId }) {
     return request(`/products/${productId}`);
+}
+
+/**
+ * Resolve the ERC-20 contract address to pay for a given EVM chain
+ * (USDC on ethereum/base, USDG on robinhood). Not an /api/mcp/v1 route —
+ * it's the same public endpoint the web checkout (TransactionModal) calls,
+ * so this server and the storefront never disagree on where a "USDC"/"USDG"
+ * payment actually goes.
+ * Maps to: GET /api/contract/usdc?chain=...
+ */
+export async function getTokenAddress({ chain }) {
+    const res = await fetch(`${CONTRACT_URL}?chain=${chain}`);
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to resolve token address for ${chain}`);
+    }
+    const data = await res.json();
+    if (!data.address) throw new Error(`No token contract configured for ${chain}`);
+    return data.address;
 }
 
 /**

@@ -424,9 +424,10 @@ export function registerTools(server, sessionId) {
         },
         async ({ type, chain, currency, product_id, creator_username, donation_amount, plan }) => {
             try {
-                // ── shared: fetch live exchange rate for non-USDC tokens ──────────
-                async function toTokenAmount(usdAmount) {
-                    if (currency === "USDC" || currency === "USDG") return usdAmount.toString(); // both are USD-pegged
+                // ── shared: fetch live exchange rate for native-currency payments ──
+                // Only used for ETH/SOL. USDC/USDG are USD-pegged 1:1 and are built
+                // as an ERC-20 token_transfer below, never through this path.
+                async function toNativeAmount(usdAmount) {
                     const coinId = currency === "ETH" ? "ethereum" : "solana";
                     const rateRes = await fetch(
                         `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`
@@ -434,6 +435,46 @@ export function registerTools(server, sessionId) {
                     const rateData = await rateRes.json();
                     const usdPerToken = rateData[coinId].usd;
                     return (usdAmount / usdPerToken).toFixed(6);
+                }
+
+                // ── shared: build the right transaction shape for the chosen currency ──
+                // CRITICAL: USDC/USDG must never be sent as a plain `transfer` with
+                // `value: <usd amount>` — the bridge/wallet-approval UI would sign that
+                // as that many units of the chain's *native* currency (e.g. "100" would
+                // become 100 ETH, worth ~$250k, instead of 100 USDC/USDG). Stablecoins on
+                // EVM chains have to go through an explicit ERC-20 `token_transfer`
+                // (contract address + 6 decimals), which @wyntraxyz/mcp-wallet already
+                // supports — this just wasn't wired up for any of the three payment types.
+                async function buildTransaction(usdAmount, to, metadata) {
+                    if (currency === "USDC" || currency === "USDG") {
+                        if (chain === "solana") {
+                            // SPL-token USDC on Solana is a different transfer mechanism
+                            // (associated token accounts, not an EVM contract call) and
+                            // isn't wired up yet — fail loudly rather than silently
+                            // mis-building a transfer.
+                            throw new Error(`${currency} on Solana isn't supported yet — use SOL instead`);
+                        }
+                        const tokenAddress = await api.getTokenAddress({ chain });
+                        return {
+                            type: "token_transfer",
+                            chain,
+                            to,
+                            tokenAddress,
+                            amount: usdAmount.toString(), // USD-pegged 1:1
+                            decimals: 6,
+                            metadata,
+                        };
+                    }
+
+                    // ETH or SOL — native currency, needs live conversion from USD.
+                    const finalPrice = await toNativeAmount(usdAmount);
+                    return {
+                        type: "transfer",
+                        chain,
+                        to,
+                        value: finalPrice,
+                        metadata,
+                    };
                 }
 
                 // ── product ───────────────────────────────────────────────────────
@@ -447,24 +488,15 @@ export function registerTools(server, sessionId) {
                         return err(`This creator has no wallet connected on ${chain}`);
                     }
 
-                    const finalPrice = await toTokenAmount(product.price);
-
-                    const pending = await bridge.requestSignature({
-                        sessionId,
-                        transaction: {
-                            type: "transfer",
-                            chain,
-                            to: creatorWallet,
-                            value: finalPrice,
-                            metadata: {
-                                action: "buy_product",
-                                productId: product_id,
-                                productName: product.title,
-                                currency,
-                                originalPrice: `${product.price} USDC`,
-                            },
-                        },
+                    const transaction = await buildTransaction(product.price, creatorWallet, {
+                        action: "buy_product",
+                        productId: product_id,
+                        productName: product.title,
+                        currency,
+                        originalPrice: `${product.price} USDC`,
                     });
+
+                    const pending = await bridge.requestSignature({ sessionId, transaction });
 
                     return ok(formatBridgeResult(pending));
                 }
@@ -481,23 +513,14 @@ export function registerTools(server, sessionId) {
                         return err(`Creator @${creator_username} has no wallet on ${chain}`);
                     }
 
-                    const finalPrice = await toTokenAmount(donation_amount);
-
-                    const pending = await bridge.requestSignature({
-                        sessionId,
-                        transaction: {
-                            type: "transfer",
-                            chain,
-                            to: creatorWallet,
-                            value: finalPrice,
-                            metadata: {
-                                action: "donation",
-                                creatorUsername: creator_username,
-                                currency,
-                                originalAmount: `${donation_amount} USD`,
-                            },
-                        },
+                    const transaction = await buildTransaction(donation_amount, creatorWallet, {
+                        action: "donation",
+                        creatorUsername: creator_username,
+                        currency,
+                        originalAmount: `${donation_amount} USD`,
                     });
+
+                    const pending = await bridge.requestSignature({ sessionId, transaction });
 
                     return ok(formatBridgeResult(pending));
                 }
@@ -515,23 +538,14 @@ export function registerTools(server, sessionId) {
                         return err(`Pro plan payments are not configured for '${plan}'`);
                     }
 
-                    const finalPrice = await toTokenAmount(planInfo.usdPrice);
-
-                    const pending = await bridge.requestSignature({
-                        sessionId,
-                        transaction: {
-                            type: "transfer",
-                            chain,
-                            to: planInfo.wallet,
-                            value: finalPrice,
-                            metadata: {
-                                action: "upgrade_to_pro",
-                                plan,
-                                currency,
-                                originalPrice: `${planInfo.usdPrice} USD`,
-                            },
-                        },
+                    const transaction = await buildTransaction(planInfo.usdPrice, planInfo.wallet, {
+                        action: "upgrade_to_pro",
+                        plan,
+                        currency,
+                        originalPrice: `${planInfo.usdPrice} USD`,
                     });
+
+                    const pending = await bridge.requestSignature({ sessionId, transaction });
 
                     return ok(formatBridgeResult(pending));
                 }
