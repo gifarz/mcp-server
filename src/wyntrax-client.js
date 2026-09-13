@@ -59,7 +59,42 @@ export async function searchCreators({ query, chain, category, limit = 10 }) {
  * Maps to: GET /api/mcp/v1/creators/[slug]
  */
 export async function getCreator({ username }) {
-    return request(`/creators/${username}`);
+    const profile = await request(`/creators/${username}`);
+
+    // Robinhood is EVM-compatible and Wyntrax pays it out through the same
+    // wallet as base/eth (see tools.js walletForChain) — but /creators/[slug]
+    // never surfaces that as an explicit "robinhood" key, so callers reading
+    // this raw profile (rather than re-deriving it themselves) wrongly
+    // conclude the creator has no Robinhood wallet. Alias it here.
+    if (profile?.wallets) {
+        profile.wallets.robinhood =
+            profile.wallets.robinhood ?? profile.wallets.base ?? profile.wallets.eth ?? null;
+    }
+
+    // /creators/[slug] returns each product's *list* price, not its live
+    // discounted price — /products/[id] is the source of truth (it's what
+    // request_payment actually charges). Re-fetch each product so anyone
+    // quoting a price off get_creator alone doesn't show a stale,
+    // non-discounted number.
+    if (Array.isArray(profile?.products) && profile.products.length) {
+        profile.products = await Promise.all(
+            profile.products.map(async (product) => {
+                try {
+                    const fresh = await getProduct({ productId: product.id });
+                    return {
+                        ...product,
+                        price: fresh.price,
+                        ...(fresh.originalPrice != null ? { originalPrice: fresh.originalPrice } : {}),
+                        ...(fresh.discountPct != null ? { discountPct: fresh.discountPct } : {}),
+                    };
+                } catch {
+                    return product; // fall back to the stale value rather than dropping the product
+                }
+            })
+        );
+    }
+
+    return profile;
 }
 
 // ─── User resolution (protected) ─────────────────────────────────────────────
@@ -238,7 +273,18 @@ export async function getAnalytics({ userId, period = "30d" }, userToken) {
  * Maps to: GET /api/mcp/v1/products/[id]
  */
 export async function getProduct({ productId }) {
-    return request(`/products/${productId}`);
+    const product = await request(`/products/${productId}`);
+
+    // Same Robinhood-alias gap as getCreator() above, on the embedded
+    // creator object this endpoint returns (ethAddress/baseAddress/solAddress,
+    // no robinhoodAddress) — alias it so walletForChain() isn't the only
+    // place that knows Robinhood reuses the base wallet.
+    if (product?.creator) {
+        product.creator.robinhoodAddress =
+            product.creator.robinhoodAddress ?? product.creator.baseAddress ?? product.creator.ethAddress ?? null;
+    }
+
+    return product;
 }
 
 /**
