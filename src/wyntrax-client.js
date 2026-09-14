@@ -46,8 +46,8 @@ async function request(path, options = {}, userToken = null) {
  * Search creators by keyword, chain, or category.
  * Maps to: GET /api/mcp/v1/creators?q=...
  */
-export async function searchCreators({ query, chain, category, limit = 10 }) {
-    const params = new URLSearchParams({ limit });
+export async function searchCreators({ query, chain, category, limit = 10, offset = 0 }) {
+    const params = new URLSearchParams({ limit, offset });
     if (query) params.set("q", query);
     if (chain) params.set("chain", chain.toUpperCase());
     if (category) params.set("category", category);

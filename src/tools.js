@@ -57,16 +57,17 @@ export function registerTools(server, sessionId) {
     // ── 1. search_creators ──────────────────────────────────────────────────────
     server.tool(
         "search_creators",
-        "Search and discover creators on Wyntrax. Filter by keyword, blockchain, or content category.",
+        "Search and discover creators on Wyntrax. Filter by keyword, blockchain, or content category. Omit query to list all creators.",
         {
-            query: z.string().describe("Search term, e.g. 'web3 developer', 'music producer'"),
+            query: z.string().optional().describe("Search term, e.g. 'web3 developer', 'music producer'. Omit to list all creators."),
             chain: z.enum(["ethereum", "base", "robinhood", "solana"]).optional().describe("Filter by chain"),
             category: z.string().optional().describe("Content category e.g. 'music', 'dev', 'art'"),
-            limit: z.number().min(1).max(50).default(10).describe("Number of results"),
+            limit: z.number().min(1).max(50).default(10).describe("Number of results per page"),
+            offset: z.number().min(0).default(0).describe("Pagination offset — increase by `limit` to fetch the next page. Response includes `total` and `hasMore` to guide this."),
         },
-        async ({ query, chain, category, limit }) => {
+        async ({ query, chain, category, limit, offset }) => {
             try {
-                const results = await api.searchCreators({ query, chain, category, limit });
+                const results = await api.searchCreators({ query, chain, category, limit, offset });
                 return ok(results);
             } catch (e) {
                 return err(e.message);
