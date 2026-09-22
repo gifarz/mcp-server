@@ -111,6 +111,7 @@ That's it. Just start talking to Claude naturally. For actions that require your
 - **Ethereum**
 - **Base**
 - **Robinhood** — pay with ETH or USDG (Robinhood's stablecoin — USDC is not used there)
+- **Arc** — Circle's EVM L1 (mainnet launched Sept 16, 2026). Pay with USDC only — Arc has no native ETH; USDC *is* its gas token.
 - **Solana**
 
 ---

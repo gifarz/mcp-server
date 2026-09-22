@@ -37,16 +37,18 @@ function getExplorerUrl(txHash, chain) {
     if (chain === "solana") return `https://solscan.io/tx/${txHash}`;
     if (chain === "base") return `https://basescan.org/tx/${txHash}`;
     if (chain === "robinhood") return `https://robinhoodchain.blockscout.com/tx/${txHash}`; // Blockscout, not Etherscan
+    if (chain === "arc") return `https://explorer.arc.io/tx/${txHash}`;
     return `https://etherscan.io/tx/${txHash}`;
 }
 
 // Wyntrax's User model exposes ethAddress / baseAddress / solAddress —
 // pick the right one for the chain the payment is going out on. Robinhood
-// is EVM-compatible and reuses the same address as ethAddress/baseAddress
-// (Wyntrax stores it under both on signup — see validate-wallet.ts).
+// and Arc are EVM-compatible and reuse the same address as
+// ethAddress/baseAddress (Wyntrax stores it under both on signup — see
+// validate-wallet.ts).
 function walletForChain(entity, chain) {
     if (chain === "solana") return entity?.solAddress;
-    if (chain === "base" || chain === "robinhood") return entity?.baseAddress ?? entity?.ethAddress;
+    if (chain === "base" || chain === "robinhood" || chain === "arc") return entity?.baseAddress ?? entity?.ethAddress;
     return entity?.ethAddress;
 }
 
@@ -60,7 +62,7 @@ export function registerTools(server, sessionId) {
         "Search and discover creators on Wyntrax. Filter by keyword, blockchain, or content category. Omit query to list all creators.",
         {
             query: z.string().optional().describe("Search term, e.g. 'web3 developer', 'music producer'. Omit to list all creators."),
-            chain: z.enum(["ethereum", "base", "robinhood", "solana"]).optional().describe("Filter by chain"),
+            chain: z.enum(["ethereum", "base", "robinhood", "arc", "solana"]).optional().describe("Filter by chain"),
             category: z.string().optional().describe("Content category e.g. 'music', 'dev', 'art'"),
             limit: z.number().min(1).max(50).default(10).describe("Number of results per page"),
             offset: z.number().min(0).default(0).describe("Pagination offset — increase by `limit` to fetch the next page. Response includes `total` and `hasMore` to guide this."),
@@ -100,7 +102,7 @@ export function registerTools(server, sessionId) {
             username: z.string().describe("Creator's Wyntrax username or slug"),
             amount: z.number().describe("Token amount e.g. 5 for 5 USDC"),
             currency: z.enum(["ETH", "USDC", "USDG"]).describe("Token to send — USDG is Robinhood's stablecoin, used instead of USDC there"),
-            chain: z.enum(["ethereum", "base", "robinhood", "solana"]).describe("Blockchain used"),
+            chain: z.enum(["ethereum", "base", "robinhood", "arc", "solana"]).describe("Blockchain used"),
             txHash: z.string().describe("On-chain transaction hash"),
             senderAddress: z.string().describe("Sender wallet address"),
             usdAmount: z.number().optional().describe("USD equivalent at time of tx"),
@@ -157,7 +159,7 @@ export function registerTools(server, sessionId) {
             product_id: z.string().describe("Product ID from get_creator"),
             amount: z.number().describe("Amount paid"),
             currency: z.enum(["ETH", "USDC", "USDG"]),
-            chain: z.enum(["ethereum", "base", "robinhood", "solana"]),
+            chain: z.enum(["ethereum", "base", "robinhood", "arc", "solana"]),
             txHash: z.string().describe("On-chain transaction hash"),
             senderAddress: z.string().describe("Buyer wallet address"),
             usdAmount: z.number().optional(),
@@ -208,7 +210,7 @@ export function registerTools(server, sessionId) {
             action: z.enum(["subscribe", "cancel"]).describe("subscribe or cancel"),
             tier_id: z.string().optional().describe("Membership tier ID — required for subscribe"),
             subscription_id: z.string().optional().describe("Subscription ID — required for cancel"),
-            chain: z.enum(["ethereum", "base", "robinhood", "solana"]).optional(),
+            chain: z.enum(["ethereum", "base", "robinhood", "arc", "solana"]).optional(),
             txHash: z.string().optional().describe("On-chain tx hash — required for subscribe"),
             amount: z.number().optional(),
             usdAmount: z.number().optional(),
@@ -269,7 +271,7 @@ export function registerTools(server, sessionId) {
         "Get earnings analytics for a Wyntrax creator: revenue, top products, supporter stats.",
         {
             wallet_address: z.string().describe("Creator's wallet address"),
-            chain: z.enum(["ethereum", "base", "robinhood", "solana"]).default("ethereum").describe("Chain the wallet is on"),
+            chain: z.enum(["ethereum", "base", "robinhood", "arc", "solana"]).default("ethereum").describe("Chain the wallet is on"),
             period: z.enum(["7d", "30d", "90d", "1y"]).default("30d").describe("Time period"),
         },
         async ({ wallet_address, chain, period }) => {
@@ -335,7 +337,7 @@ export function registerTools(server, sessionId) {
         "Get a buyer's confirmed purchases and download URLs by wallet address.",
         {
             wallet_address: z.string().describe("Buyer wallet address"),
-            chain: z.enum(["ethereum", "base", "robinhood", "solana"])
+            chain: z.enum(["ethereum", "base", "robinhood", "arc", "solana"])
                 .optional()
                 .describe("Filter by chain. Omit to return purchases across all chains."),
         },
@@ -374,7 +376,7 @@ export function registerTools(server, sessionId) {
             amount: z.number(),
             usdAmount: z.number().optional(),
             currency: z.enum(["ETH", "USDC", "USDG"]),
-            chain: z.enum(["ethereum", "base", "robinhood", "solana"]),
+            chain: z.enum(["ethereum", "base", "robinhood", "arc", "solana"]),
             txHash: z.string(),
             senderAddress: z.string(),
         },
@@ -410,8 +412,8 @@ export function registerTools(server, sessionId) {
             type: z.enum(["product", "donation", "pro"]).describe(
                 "Payment type: 'product' to buy a product, 'donation' to tip a creator, 'pro' to upgrade the user's Wyntrax account"
             ),
-            chain: z.enum(["ethereum", "base", "robinhood", "solana"]),
-            currency: z.enum(["ETH", "USDC", "USDG", "SOL"]).describe("Token to pay with — USDG is Robinhood's stablecoin, used instead of USDC there"),
+            chain: z.enum(["ethereum", "base", "robinhood", "arc", "solana"]),
+            currency: z.enum(["ETH", "USDC", "USDG", "SOL"]).describe("Token to pay with — USDG is Robinhood's stablecoin, used instead of USDC there. Arc has no native ETH: use USDC there, never ETH."),
 
             // product
             product_id: z.string().optional().describe("Required for type='product'"),
@@ -425,6 +427,15 @@ export function registerTools(server, sessionId) {
         },
         async ({ type, chain, currency, product_id, creator_username, donation_amount, plan }) => {
             try {
+                // Arc's native gas token IS USDC — there is no ETH there. An
+                // "ETH" request on Arc would otherwise fall through to
+                // toNativeAmount()'s ethereum price feed and build a native
+                // transfer for an asset that doesn't exist on this chain, so
+                // reject it explicitly rather than silently mis-pricing it.
+                if (chain === "arc" && currency === "ETH") {
+                    return err("Arc has no native ETH — use currency: 'USDC' for Arc payments.");
+                }
+
                 // ── shared: fetch live exchange rate for native-currency payments ──
                 // Only used for ETH/SOL. USDC/USDG are USD-pegged 1:1 and are built
                 // as an ERC-20 token_transfer below, never through this path.

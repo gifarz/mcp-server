@@ -61,14 +61,17 @@ export async function searchCreators({ query, chain, category, limit = 10, offse
 export async function getCreator({ username }) {
     const profile = await request(`/creators/${username}`);
 
-    // Robinhood is EVM-compatible and Wyntrax pays it out through the same
-    // wallet as base/eth (see tools.js walletForChain) — but /creators/[slug]
-    // never surfaces that as an explicit "robinhood" key, so callers reading
-    // this raw profile (rather than re-deriving it themselves) wrongly
-    // conclude the creator has no Robinhood wallet. Alias it here.
+    // Robinhood and Arc are EVM-compatible and Wyntrax pays them out through
+    // the same wallet as base/eth (see tools.js walletForChain) — but
+    // /creators/[slug] never surfaces that as explicit "robinhood"/"arc"
+    // keys, so callers reading this raw profile (rather than re-deriving it
+    // themselves) wrongly conclude the creator has no wallet there. Alias
+    // both here.
     if (profile?.wallets) {
         profile.wallets.robinhood =
             profile.wallets.robinhood ?? profile.wallets.base ?? profile.wallets.eth ?? null;
+        profile.wallets.arc =
+            profile.wallets.arc ?? profile.wallets.base ?? profile.wallets.eth ?? null;
     }
 
     // /creators/[slug] returns each product's *list* price, not its live
@@ -277,11 +280,13 @@ export async function getProduct({ productId }) {
 
     // Same Robinhood-alias gap as getCreator() above, on the embedded
     // creator object this endpoint returns (ethAddress/baseAddress/solAddress,
-    // no robinhoodAddress) — alias it so walletForChain() isn't the only
-    // place that knows Robinhood reuses the base wallet.
+    // no robinhoodAddress/arcAddress) — alias both so walletForChain() isn't
+    // the only place that knows Robinhood and Arc reuse the base wallet.
     if (product?.creator) {
         product.creator.robinhoodAddress =
             product.creator.robinhoodAddress ?? product.creator.baseAddress ?? product.creator.ethAddress ?? null;
+        product.creator.arcAddress =
+            product.creator.arcAddress ?? product.creator.baseAddress ?? product.creator.ethAddress ?? null;
     }
 
     return product;
@@ -289,10 +294,10 @@ export async function getProduct({ productId }) {
 
 /**
  * Resolve the ERC-20 contract address to pay for a given EVM chain
- * (USDC on ethereum/base, USDG on robinhood). Not an /api/mcp/v1 route —
- * it's the same public endpoint the web checkout (TransactionModal) calls,
- * so this server and the storefront never disagree on where a "USDC"/"USDG"
- * payment actually goes.
+ * (USDC on ethereum/base/arc, USDG on robinhood). Not an /api/mcp/v1
+ * route — it's the same public endpoint the web checkout (TransactionModal)
+ * calls, so this server and the storefront never disagree on where a
+ * "USDC"/"USDG" payment actually goes.
  * Maps to: GET /api/contract/usdc?chain=...
  */
 export async function getTokenAddress({ chain }) {

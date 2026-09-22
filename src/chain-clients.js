@@ -30,6 +30,25 @@ const robinhoodChain = defineChain({
     },
 });
 
+// Arc — Circle's EVM-compatible L1, mainnet launched Sept 16, 2026.
+// Unlike every other EVM chain here, Arc has NO separate native gas
+// token — USDC itself is native gas (18-decimal interface), and this
+// client only ever verifies against its 6-decimal ERC-20 view (the same
+// address Wyntrax's web app and tools.js use), so `nativeCurrency` below
+// is cosmetic and only "transfer"-type (not "token_transfer") txs would
+// ever touch it — and Wyntrax never builds a native transfer on Arc.
+const arcChain = defineChain({
+    id: 5042,
+    name: "Arc",
+    nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+    rpcUrls: {
+        default: { http: [process.env.ARC_RPC_URL || "https://rpc.mainnet.arc.io"] },
+    },
+    blockExplorers: {
+        default: { name: "Arc Explorer", url: "https://explorer.arc.io" },
+    },
+});
+
 export const evmClients = {
     ethereum: createPublicClient({
         chain: mainnet,
@@ -42,6 +61,10 @@ export const evmClients = {
     robinhood: createPublicClient({
         chain: robinhoodChain,
         transport: http(), // RPC URL is baked into robinhoodChain above
+    }),
+    arc: createPublicClient({
+        chain: arcChain,
+        transport: http(), // RPC URL is baked into arcChain above
     }),
 };
 

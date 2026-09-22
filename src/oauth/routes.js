@@ -99,8 +99,8 @@ async function findOrCreateUserByWallet({ chain, address, message, signature }) 
     const valid = await verifySignature({ chain, address, message, signature });
     if (!valid) return null;
 
-    // Ethereum, Base, and Robinhood are all EVM — same signature works for
-    // all three, so Wyntrax stores/looks these up as one address across
+    // Ethereum, Base, Robinhood, and Arc are all EVM — same signature works
+    // for all four, so Wyntrax stores/looks these up as one address across
     // ethAddress + baseAddress rather than a field per chain (see the web
     // app's validate-wallet.ts). Solana is its own address space.
     const isEvm = chain !== "solana";
