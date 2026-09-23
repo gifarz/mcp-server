@@ -17,6 +17,10 @@ const STATUS_URL = BASE_URL.replace(/\/api\/mcp\/v1$/, "/api/transactions/status
 // so the MCP server and the storefront always agree on which address to pay.
 const CONTRACT_URL = BASE_URL.replace(/\/api\/mcp\/v1$/, "/api/contract/usdc");
 
+// Root site URL (no /api/mcp/v1 suffix) — used only to build human-facing
+// links (product pages, share/buy links), never for API calls.
+const SITE_URL = BASE_URL.replace(/\/api\/mcp\/v1$/, "");
+
 async function request(path, options = {}, userToken = null) {
     const headers = {
         "Content-Type": "application/json",
@@ -320,6 +324,55 @@ export async function searchProducts({ query, type, limit = 10 }) {
     if (query) params.set('q', query);
     if (type) params.set('type', type.toUpperCase());
     return request(`/products?${params}`);
+}
+
+/**
+ * List a new product for sale under the calling creator's own account.
+ * `creatorId` must be the caller's own userId (the OAuth-resolved
+ * sessionId passed into registerTools — see tools.js), never a value
+ * taken from tool arguments.
+ * Maps to: POST /api/mcp/v1/products
+ */
+export async function createProduct({
+    creatorId,
+    title,
+    description,
+    price,
+    currency,
+    fileType,
+    fileUrl,
+    coverUrl,
+    discountPct,
+}) {
+    return request("/products", {
+        method: "POST",
+        body: JSON.stringify({
+            creatorId,
+            title,
+            description,
+            price,
+            currency,
+            fileType,
+            fileUrl: fileUrl ?? null,
+            coverUrl: coverUrl ?? null,
+            discountPct: discountPct ?? null,
+        }),
+    });
+}
+
+/**
+ * Build the two link shapes every product-facing tool hands out: the
+ * ordinary product page, and a "buy now" link that deep-links straight
+ * into the payment modal in a new tab (`&buy=1`, read by the storefront's
+ * CreatorPage deep-link handler).
+ */
+export function buildProductLinks(product) {
+    const slug = product?.creator?.creatorSlug;
+    if (!slug || !product?.id) return { pageUrl: null, buyUrl: null };
+    return {
+        pageUrl: `${SITE_URL}/${slug}?product=${product.id}`,
+        buyUrl: `${SITE_URL}/${slug}?product=${product.id}&buy=1`,
+    };
 }
 
 /**

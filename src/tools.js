@@ -310,6 +310,32 @@ export function registerTools(server, sessionId) {
         }
     );
 
+    // ── 7b. share_product ────────────────────────────────────────────────────────
+    server.tool(
+        "share_product",
+        "Get a ready-to-share checkout link for a product — opening it takes the buyer straight to the product with the payment modal open, in a new tab. Use this whenever asked to share, send, or link to a product for someone to buy.",
+        {
+            product_id: z.string().describe("Product ID from search_products, get_creator, or get_product"),
+        },
+        async ({ product_id }) => {
+            try {
+                const product = await api.getProduct({ productId: product_id });
+                const links = api.buildProductLinks(product);
+                if (!links.buyUrl) {
+                    return err("This creator doesn't have a public page yet, so this product can't be shared.");
+                }
+                return ok({
+                    title: product.title,
+                    price: `${product.price} ${product.currency}`,
+                    buyUrl: links.buyUrl,
+                    pageUrl: links.pageUrl,
+                });
+            } catch (e) {
+                return err(e.message);
+            }
+        }
+    );
+
     // ── 8. search_products ──────────────────────────────────────────────────────
     server.tool(
         "search_products",
@@ -345,6 +371,56 @@ export function registerTools(server, sessionId) {
             try {
                 const result = await api.getMyPurchases({ address: wallet_address, chain });
                 return ok(result);
+            } catch (e) {
+                return err(e.message);
+            }
+        }
+    );
+
+    // ── 9b. upload_product ──────────────────────────────────────────────────────
+    server.tool(
+        "upload_product",
+        "List a new digital product for sale under the caller's own connected Wyntrax account. Ask the person for a title, price, currency, and file type before calling this — fileUrl and coverUrl are optional; omit fileUrl to create it as an unpublished draft they can attach a file to later from the Wyntrax dashboard.",
+        {
+            title: z.string().min(1).max(200).describe("Product title"),
+            description: z.string().max(2000).optional().describe("Product description"),
+            price: z.number().min(0).default(0).describe("Price; 0 for a free product"),
+            currency: z.string().default("USDC").describe("Currency code, default USDC"),
+            fileType: z.enum(["PDF", "Video", "Audio", "ZIP"]).describe("What kind of file this product delivers"),
+            fileUrl: z.string().url().optional().describe("Direct URL to the already-hosted deliverable file, if the person has one"),
+            coverUrl: z.string().url().optional().describe("Cover image URL, if the person has one"),
+            discountPct: z.number().int().min(1).max(100).optional().describe("Optional launch discount, 1-100"),
+        },
+        async ({ title, description, price, currency, fileType, fileUrl, coverUrl, discountPct }) => {
+            try {
+                // sessionId is this tool call's authenticated caller (see
+                // registerTools' doc-comment) — never taken from the model,
+                // so a product is always published under the account that's
+                // actually connected, the same way every other write tool
+                // here only ever acts on the caller's own identity.
+                if (!sessionId) return err("No authenticated Wyntrax account for this session.");
+
+                const product = await api.createProduct({
+                    creatorId: sessionId,
+                    title,
+                    description: description ?? "",
+                    price,
+                    currency,
+                    fileType,
+                    fileUrl,
+                    coverUrl,
+                    discountPct,
+                });
+
+                return ok({
+                    status: product.status,
+                    message: fileUrl
+                        ? `"${title}" is live!`
+                        : `"${title}" was saved as a draft — attach a file from the Wyntrax dashboard to publish it.`,
+                    productId: product.id,
+                    price: `${product.price} ${product.currency}`,
+                    pageUrl: product.pageUrl,
+                });
             } catch (e) {
                 return err(e.message);
             }
